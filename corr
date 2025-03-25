@@ -1,0 +1,52 @@
+import numpy as np
+import pandas as pd
+
+def calculate_realized_volatility(logreturns_df, weights_df, window=21):
+    """
+    Compute the realized volatility of an index given:
+      - logreturns_df: DataFrame of log returns (index=date, columns=assets)
+      - weights_df: DataFrame of portfolio weights (index=date, columns=assets)
+      - window: Rolling window size for covariance calculation
+    """
+    # Prepare an empty Series to store the realized volatility on each date
+    index_vol_df = pd.Series(index=logreturns_df.index, dtype=float)
+    
+    # Loop over the dates, starting at `window` so we have enough data for the rolling window
+    for i in range(window, len(logreturns_df)):
+        date = logreturns_df.index[i]
+        
+        # Identify which assets have non-NaN returns on this particular date
+        valid_assets = logreturns_df.loc[date].dropna().index
+        
+        # If fewer than 2 assets remain, we can't form a covariance matrix
+        if len(valid_assets) < 2:
+            index_vol_df.loc[date] = np.nan
+            continue
+        
+        # Slice the last 'window' days of returns for these valid assets
+        window_data = logreturns_df[valid_assets].iloc[i - window : i]
+        
+        # It’s often safer to drop columns with NaNs over the entire window
+        window_data = window_data.dropna(axis=1, how='any')
+        
+        # If after dropping we have fewer than 2 assets, skip
+        if window_data.shape[1] < 2:
+            index_vol_df.loc[date] = np.nan
+            continue
+        
+        # Compute the sample covariance matrix for this window
+        cov_matrix = window_data.cov()
+        
+        # Get the corresponding weights (only for the valid columns)
+        w = weights_df.loc[date, window_data.columns].values
+        
+        # Portfolio variance = wᵀ Σ w
+        portfolio_var = w @ cov_matrix.values @ w
+        
+        # Realized volatility = sqrt of variance
+        index_vol_df.loc[date] = np.sqrt(portfolio_var)
+    
+    return index_vol_df
+
+# Example usage:
+# basket_rv_calc = calculate_realized_volatility(rets_df_basket, constituents_basket, window=21)

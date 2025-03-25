@@ -50,3 +50,59 @@ def calculate_realized_volatility(logreturns_df, weights_df, window=21):
 
 # Example usage:
 # basket_rv_calc = calculate_realized_volatility(rets_df_basket, constituents_basket, window=21)
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
+def calculate_realized_volatility(logreturns_df, weights_df, window):
+    """
+    Calculate realized volatility for an index with improved memory efficiency.
+    
+    Parameters:
+    - logreturns_df: DataFrame of log returns with date index and asset columns
+    - weights_df: DataFrame of weights with date index and asset columns
+    - window: Rolling window size for volatility calculation
+    
+    Returns:
+    - DataFrame with index volatility for each date
+    """
+    # Preallocate the output series to avoid repeated DataFrame resizing
+    index_vol_df = pd.Series(index=logreturns_df.index, dtype=float, name='index_volatility')
+    
+    # Precompute rolling standard deviation and correlation more efficiently
+    realized_vols = logreturns_df.rolling(window=window).std()
+    realized_corrs = logreturns_df.rolling(window=window).corr()
+    
+    # Iterate through dates more memory-efficiently
+    for date in logreturns_df.index[window-1:]:
+        # Select valid assets for the current date
+        valid_assets = logreturns_df.loc[date].notna()
+        
+        # Skip if no valid assets
+        if not valid_assets.any():
+            index_vol_df.loc[date] = np.nan
+            continue
+        
+        # Get weights and volatilities for valid assets
+        weights = weights_df.loc[date, valid_assets].dropna()
+        weights /= weights.sum()  # Normalize weights
+        
+        # Select volatilities and correlation matrix for valid assets
+        volatilities = realized_vols.loc[date, valid_assets]
+        corr_matrix = realized_corrs.loc[date].loc[valid_assets, valid_assets].fillna(0)
+        
+        # Compute covariance matrix and index variance
+        cov_matrix = np.outer(volatilities, volatilities) * corr_matrix.to_numpy()
+        index_variance = weights @ cov_matrix @ weights.T
+        
+        # Store the square root of variance as index volatility
+        index_vol_df.loc[date] = np.sqrt(index_variance)
+    
+    return index_vol_df
+
+# Example usage
+basket_rv_calc = calculate_realized_volatility(rets_df_basket, constituents_basket, window=21)
